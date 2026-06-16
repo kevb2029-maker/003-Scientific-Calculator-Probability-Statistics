@@ -358,7 +358,7 @@ label:first-child{margin-top:0}
               <button class="cb num s2" onclick="ins('0')">0</button>
               <button class="cb num" onclick="ins('.')">.</button>
               <button class="cb op"  onclick="ins('+')">+</button>
-              <button class="cb eq"  onclick="evaluate()">=</button>
+              <button class="cb eq"  onclick="doCalc()">=</button>
             </div>
           </div>
         </div>
@@ -543,7 +543,7 @@ label:first-child{margin-top:0}
         <!-- Simulated traffic -->
         <div class="panel-hdr" style="margin-top:0">
           <span>SITE TRAFFIC</span>
-          <span style="font-size:.62rem;color:#aaa;font-weight:400;letter-spacing:0">simulated</span>
+          <div class="panel-hdr-right"><span class="live-dot"></span> Live</div>
         </div>
         <div id="trafficContent"></div>
 
@@ -553,11 +553,33 @@ label:first-child{margin-top:0}
 
 </div><!-- /app -->
 
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
 <script>
 // ════════════════════════════════════════════════════
-// Analytics Engine
+// Firebase Configuration
+// 1. Firebase Console → create project → Realtime Database → Create database (test mode)
+// 2. Project Settings → Your apps → Add web app → copy config below
+// 3. Set database rules:  { "rules": { ".read": true, ".write": true } }
 // ════════════════════════════════════════════════════
+const FIREBASE_CONFIG = {
+  apiKey:            'AIzaSyBtXPHOS4h9yqo5YcXodKFN6GApru5OZJs',
+  authDomain:        'stats-da345.firebaseapp.com',
+  databaseURL:       'https://stats-da345-default-rtdb.firebaseio.com',
+  projectId:         'stats-da345',
+  storageBucket:     'stats-da345.firebasestorage.app',
+  messagingSenderId: '247683335308',
+  appId:             '1:247683335308:web:ab10b866e604e7904067a9'
+};
 
+let db = null;
+if (!FIREBASE_CONFIG.databaseURL.includes('YOUR_')) {
+  try { firebase.initializeApp(FIREBASE_CONFIG); db = firebase.database(); } catch(e) { console.warn('Firebase:', e); }
+}
+
+// ════════════════════════════════════════════════════
+// Session (local, real)
+// ════════════════════════════════════════════════════
 const SESSION = {
   start: Date.now(),
   calcs: 0,
@@ -577,7 +599,6 @@ function track(fnName) {
 function renderSession() {
   const ce = document.getElementById('sCalcs'); if (ce) ce.textContent = SESSION.calcs;
   const te = document.getElementById('sTab'); if (te) te.textContent = TAB_LABELS[SESSION.currentTab];
-
   const keys = ['scientific','statistics','probability','bayesian'];
   const maxV = Math.max(1, ...keys.map(k => SESSION.tabVisits[k]));
   keys.forEach(k => {
@@ -585,7 +606,6 @@ function renderSession() {
     if (fill) fill.style.width = (SESSION.tabVisits[k] / maxV * 100) + '%';
     if (val)  val.textContent = SESSION.tabVisits[k];
   });
-
   const fl = document.getElementById('fnList');
   if (!fl) return;
   const sorted = Object.entries(SESSION.fnCounts).sort((a,b) => b[1]-a[1]).slice(0,6);
@@ -596,44 +616,39 @@ function renderSession() {
   ).join('');
 }
 
-// Session timer
 setInterval(() => {
   const s = Math.floor((Date.now() - SESSION.start) / 1000);
   const el = document.getElementById('sDur');
   if (el) el.textContent = String(Math.floor(s/60)).padStart(2,'0') + ':' + String(s%60).padStart(2,'0');
 }, 1000);
 
-// ── Simulation ───────────────────────────────────────
-
-function genHourData() {
-  const curve = [22,15,12,11,16,42,115,225,305,335,315,295,305,285,275,265,245,215,185,155,125,95,70,42];
-  const h = new Date().getHours();
-  return Array.from({length:12}, (_,i) => Math.max(5, curve[(h-11+i+24)%24] + Math.floor(Math.random()*50-25)));
+// ════════════════════════════════════════════════════
+// Helpers
+// ════════════════════════════════════════════════════
+function detectDevice() {
+  const ua = navigator.userAgent;
+  if (/tablet|ipad|playbook|silk|(android(?!.*mobi))/i.test(ua)) return 'Tablet';
+  if (/mobile|iphone|ipod|android|blackberry|opera mini|iemobile/i.test(ua)) return 'Mobile';
+  return 'Desktop';
 }
 
-function genWeekData() {
-  return [185,295,345,328,288,198,162].map(v => v + Math.floor(Math.random()*60-30));
+function flag(code) {
+  if (!code || code.length !== 2) return '🌐';
+  return [...code.toUpperCase()].map(c => String.fromCodePoint(0x1F1E6 + c.charCodeAt(0) - 65)).join('');
 }
 
-const SIM = {
-  active:   15 + Math.floor(Math.random()*12),
-  views:   1150 + Math.floor(Math.random()*350),
-  sessions: 295 + Math.floor(Math.random()*100),
-  hourData: genHourData(),
-  weekData: genWeekData(),
-  avgSess: '4m ' + (8 + Math.floor(Math.random()*40)) + 's',
-  bounce:  (31 + Math.random()*6).toFixed(1) + '%'
-};
-
+// ════════════════════════════════════════════════════
+// Charts
+// ════════════════════════════════════════════════════
 function sparkSVG(data, w, h) {
-  const max = Math.max(...data), min = Math.min(...data), rng = max-min || 1;
+  const max = Math.max(...data), min = Math.min(...data), rng = max - min || 1;
   const n = data.length, pd = 3;
-  const pts = data.map((v,i) => {
-    const x = pd + (i/(n-1))*(w-pd*2);
-    const y = pd + (1-(v-min)/rng)*(h-pd*2);
-    return x.toFixed(1)+','+y.toFixed(1);
+  const pts = data.map((v, i) => {
+    const x = pd + (i / (n - 1)) * (w - pd * 2);
+    const y = pd + (1 - (v - min) / rng) * (h - pd * 2);
+    return x.toFixed(1) + ',' + y.toFixed(1);
   });
-  const line = pts.join(' '), fill = `${pd},${h-pd} ${line} ${(w-pd).toFixed(1)},${h-pd}`;
+  const line = pts.join(' '), fill = `${pd},${h - pd} ${line} ${(w - pd).toFixed(1)},${h - pd}`;
   return `<svg width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" style="display:block">
     <defs><linearGradient id="slg" x1="0" y1="0" x2="0" y2="1">
       <stop offset="0%" stop-color="#8B4513" stop-opacity=".22"/>
@@ -644,57 +659,158 @@ function sparkSVG(data, w, h) {
   </svg>`;
 }
 
-function buildTrafficPanel() {
-  const days = ['M','T','W','T','F','S','S'];
-  const maxW = Math.max(...SIM.weekData);
-  const weekHTML = SIM.weekData.map((v,i) =>
-    `<div class="wk-col"><div class="wk-bwrap"><div class="wk-bar" style="height:${Math.round(v/maxW*100)}%"></div></div><div class="wk-day">${days[i]}</div></div>`
-  ).join('');
-
-  const regions = [['🇺🇸','US',42],['🇬🇧','UK',18],['🇨🇦','CA',12],['🇩🇪','DE',8],['🇦🇺','AU',6]];
-  const regHTML = regions.map(([fl,nm,p]) =>
-    `<div class="reg-row"><span class="reg-flag">${fl}</span><span class="reg-name">${nm}</span><div class="reg-track"><div class="reg-bar" style="width:${p}%"></div></div><span class="reg-pct">${p}%</span></div>`
-  ).join('');
-
-  const devs = [['Desktop','67'],['Mobile','26'],['Tablet','7']];
-  const devHTML = devs.map(([nm,p]) =>
-    `<div class="mb-row"><span class="mb-label">${nm}</span><div class="mb-track"><div class="mb-fill" style="width:${p}%"></div></div><span class="mb-val">${p}%</span></div>`
-  ).join('');
-
-  document.getElementById('trafficContent').innerHTML = `
-    <div class="active-row">
-      <div class="pulse-ring"></div>
-      <span class="active-num" id="sActive">${SIM.active}</span>
-      <span class="active-lbl">active now</span>
-    </div>
-    <div class="stat-pair">
-      <div class="stat-box"><div class="stat-big" id="sViews">${SIM.views.toLocaleString()}</div><div class="stat-sm">Views today</div></div>
-      <div class="stat-box"><div class="stat-big" id="sSessions">${SIM.sessions.toLocaleString()}</div><div class="stat-sm">Sessions</div></div>
-    </div>
-    <div class="a-label">LAST 12 HOURS</div>
-    <div class="spark-wrap">${sparkSVG(SIM.hourData, 226, 46)}</div>
-    <div class="a-label">THIS WEEK</div>
-    <div class="week-bars">${weekHTML}</div>
-    <div class="a-label">TOP REGIONS</div>
-    ${regHTML}
-    <div class="a-label">DEVICES</div>
-    ${devHTML}
-    <div class="stat-pair" style="margin-top:8px">
-      <div class="stat-box"><div class="stat-big">${SIM.avgSess}</div><div class="stat-sm">Avg Session</div></div>
-      <div class="stat-box"><div class="stat-big">${SIM.bounce}</div><div class="stat-sm">Bounce Rate</div></div>
-    </div>`;
+function donutSVG(segments, size) {
+  size = size || 88;
+  const total = segments.reduce((s, d) => s + d.value, 0) || 1;
+  const cx = size / 2, cy = size / 2, outerR = size / 2 - 4, innerR = outerR - 16;
+  let angle = -90;
+  function pt(r, a) { const rad = a * Math.PI / 180; return [cx + r * Math.cos(rad), cy + r * Math.sin(rad)]; }
+  const paths = segments.map(seg => {
+    const sweep = (seg.value / total) * 360;
+    if (sweep < 1) return '';
+    const a1 = angle, a2 = angle + sweep - 0.3;
+    angle += sweep;
+    const large = sweep > 180 ? 1 : 0;
+    const [ox1,oy1]=pt(outerR,a1),[ox2,oy2]=pt(outerR,a2),[ix2,iy2]=pt(innerR,a2),[ix1,iy1]=pt(innerR,a1);
+    return `<path d="M${ox1},${oy1} A${outerR},${outerR} 0 ${large} 1 ${ox2},${oy2} L${ix2},${iy2} A${innerR},${innerR} 0 ${large} 0 ${ix1},${iy1} Z" fill="${seg.color}" opacity=".9"/>`;
+  });
+  return `<svg width="${size}" height="${size}" viewBox="0 0 ${size} ${size}" style="display:block">${paths.join('')}</svg>`;
 }
 
-// Live traffic updates
-setInterval(() => {
-  SIM.active = Math.max(8, Math.min(48, SIM.active + Math.floor(Math.random()*5)-2));
-  SIM.views  += Math.floor(Math.random()*3);
-  if (Math.random() < .3) SIM.sessions++;
-  const a=document.getElementById('sActive'), v=document.getElementById('sViews'), s=document.getElementById('sSessions');
-  if (a) a.textContent = SIM.active;
-  if (v) v.textContent = SIM.views.toLocaleString();
-  if (s) s.textContent = SIM.sessions.toLocaleString();
-}, 5000);
+// ════════════════════════════════════════════════════
+// Traffic State + Renderer
+// ════════════════════════════════════════════════════
+const TRAFFIC = {
+  active: 0, total: 0, today: 0,
+  sessions: 0, totalDuration: 0, bounced: 0,
+  hours: new Array(24).fill(0),
+  days:  new Array(7).fill(0),
+  countries: {},
+  devices: { Desktop:0, Mobile:0, Tablet:0 },
+  tabs: { scientific:0, statistics:0, probability:0, bayesian:0 }
+};
+
+function renderTrafficPanel() {
+  const el = document.getElementById('trafficContent');
+  if (!el) return;
+  // Mon-first display; Firebase stores 0=Sun…6=Sat
+  const DAY_ORDER  = [1,2,3,4,5,6,0];
+  const DAY_LABELS = ['M','T','W','R','F','S','U'];
+  const devColors  = { Desktop:'#8B4513', Mobile:'#5A7A3A', Tablet:'#A09070' };
+
+  const activeHTML = `<div class="active-row"><div class="pulse-ring"></div><span class="active-num" id="sActive">${TRAFFIC.active||'—'}</span><span class="active-lbl">active now</span></div>`;
+
+  const sessHTML = `<div class="stat-pair">
+    <div class="stat-box"><div class="stat-big">${(TRAFFIC.today||0).toLocaleString()}</div><div class="stat-sm">Views today</div></div>
+    <div class="stat-box"><div class="stat-big">${(TRAFFIC.sessions||0).toLocaleString()}</div><div class="stat-sm">Sessions</div></div>
+  </div>`;
+
+  const hourHTML = `<div class="a-label">VISITS BY HOUR</div><div class="spark-wrap">${sparkSVG(TRAFFIC.hours, 226, 46)}</div>`;
+
+  const orderedDays = DAY_ORDER.map(i => TRAFFIC.days[i]);
+  const maxDay = Math.max(1, ...orderedDays);
+  const daysHTML = `<div class="a-label">THIS WEEK</div><div class="week-bars">${orderedDays.map((v,i) =>
+    `<div class="wk-col"><div class="wk-bwrap"><div class="wk-bar" style="height:${Math.round(v/maxDay*100)}%"></div></div><div class="wk-day">${DAY_LABELS[i]}</div></div>`
+  ).join('')}</div>`;
+
+  const topC = Object.entries(TRAFFIC.countries).sort((a,b) => b[1]-a[1]).slice(0,5);
+  const maxC = topC.length ? topC[0][1] : 1;
+  const countriesHTML = topC.length ? `<div class="a-label">TOP REGIONS</div>${topC.map(([code,count]) =>
+    `<div class="reg-row"><span class="reg-flag">${flag(code)}</span><span class="reg-name">${code}</span><div class="reg-track"><div class="reg-bar" style="width:${Math.round(count/maxC*100)}%"></div></div><span class="reg-pct">${count}</span></div>`
+  ).join('')}` : '';
+
+  const devSegs = Object.entries(TRAFFIC.devices).filter(([,v]) => v > 0).map(([k,v]) => ({label:k,value:v,color:devColors[k]}));
+  const devTotal = devSegs.reduce((s,d) => s + d.value, 0) || 1;
+  const devicesHTML = devSegs.length ? `<div class="a-label">DEVICES</div>
+    <div style="display:flex;align-items:center;gap:10px;margin-top:4px">
+      ${donutSVG(devSegs, 88)}
+      <div style="flex:1">${devSegs.map(d =>
+        `<div style="display:flex;align-items:center;gap:5px;margin-bottom:4px">
+           <div style="width:8px;height:8px;border-radius:2px;background:${d.color};flex-shrink:0"></div>
+           <span style="font-size:.7rem;color:#555;flex:1">${d.label}</span>
+           <span style="font-size:.7rem;font-family:'Courier New',monospace">${Math.round(d.value/devTotal*100)}%</span>
+         </div>`).join('')}
+      </div>
+    </div>` : '';
+
+  const avgSec = TRAFFIC.sessions > 0 ? Math.round(TRAFFIC.totalDuration / TRAFFIC.sessions) : 0;
+  const avgStr = avgSec >= 60 ? `${Math.floor(avgSec/60)}m ${avgSec%60}s` : (avgSec > 0 ? `${avgSec}s` : '—');
+  const bounce  = TRAFFIC.sessions > 0 ? (TRAFFIC.bounced / TRAFFIC.sessions * 100).toFixed(1) + '%' : '—';
+  const bottomHTML = `<div class="stat-pair" style="margin-top:8px">
+    <div class="stat-box"><div class="stat-big">${avgStr}</div><div class="stat-sm">Avg Session</div></div>
+    <div class="stat-box"><div class="stat-big">${bounce}</div><div class="stat-sm">Bounce Rate</div></div>
+  </div>`;
+
+  const tabEntries = Object.entries(TRAFFIC.tabs).sort((a,b) => b[1]-a[1]);
+  const maxT = Math.max(1, ...tabEntries.map(e => e[1]));
+  const tabsHTML = tabEntries.some(([,v]) => v > 0) ? `<div class="a-label">POPULAR TABS</div>${tabEntries.map(([k,v]) =>
+    `<div class="mb-row"><span class="mb-label">${TAB_LABELS[k]}</span><div class="mb-track"><div class="mb-fill" style="width:${v/maxT*100}%"></div></div><span class="mb-val">${v}</span></div>`
+  ).join('')}` : '';
+
+  el.innerHTML = activeHTML + sessHTML + hourHTML + daysHTML + countriesHTML + devicesHTML + bottomHTML + tabsHTML;
+}
+
+// ════════════════════════════════════════════════════
+// Firebase Analytics
+// ════════════════════════════════════════════════════
+function initAnalytics() {
+  if (!db) { renderTrafficPanel(); return; }
+
+  const sessionId = Math.random().toString(36).slice(2, 10);
+  const presRef = db.ref('presence/' + sessionId);
+  presRef.set(true);
+  presRef.onDisconnect().remove();
+  db.ref('presence').on('value', snap => {
+    TRAFFIC.active = snap.numChildren();
+    const el = document.getElementById('sActive');
+    if (el) el.textContent = TRAFFIC.active;
+  });
+
+  db.ref('stats/total').on('value',         s => { TRAFFIC.total         = s.val()||0; renderTrafficPanel(); });
+  db.ref('stats/sessions').on('value',      s => { TRAFFIC.sessions      = s.val()||0; renderTrafficPanel(); });
+  db.ref('stats/totalDuration').on('value', s => { TRAFFIC.totalDuration = s.val()||0; renderTrafficPanel(); });
+  db.ref('stats/bounced').on('value',       s => { TRAFFIC.bounced       = s.val()||0; renderTrafficPanel(); });
+  db.ref('stats/devices').on('value',       s => { TRAFFIC.devices   = Object.assign({Desktop:0,Mobile:0,Tablet:0}, s.val()); renderTrafficPanel(); });
+  db.ref('stats/countries').on('value',     s => { TRAFFIC.countries = s.val()||{}; renderTrafficPanel(); });
+  db.ref('stats/tabs').on('value',          s => { TRAFFIC.tabs = Object.assign({scientific:0,statistics:0,probability:0,bayesian:0}, s.val()); renderTrafficPanel(); });
+  db.ref('stats/days').on('value',  s => { const v=s.val()||{}; TRAFFIC.days  = Array.from({length:7},  (_,i) => v[i]||0); renderTrafficPanel(); });
+  db.ref('stats/hours').on('value', s => { const v=s.val()||{}; TRAFFIC.hours = Array.from({length:24}, (_,i) => v[i]||0); renderTrafficPanel(); });
+
+  const today = new Date().toISOString().slice(0,10);
+  db.ref('daily/'+today).on('value', s => { TRAFFIC.today = s.val()||0; renderTrafficPanel(); });
+
+  // Record session duration + bounce on page close
+  window.addEventListener('pagehide', () => {
+    if (!db) return;
+    const dur = Math.round((Date.now() - SESSION.start) / 1000);
+    db.ref('stats/totalDuration').transaction(v => (v||0) + dur);
+    if (SESSION.calcs === 0) db.ref('stats/bounced').transaction(v => (v||0) + 1);
+  });
+
+  if (!sessionStorage.getItem('__counted')) {
+    sessionStorage.setItem('__counted', '1');
+    recordVisit();
+  }
+}
+
+async function recordVisit() {
+  if (!db) return;
+  const inc = path => db.ref(path).transaction(v => (v||0) + 1);
+  inc('stats/total');
+  inc('stats/sessions');
+  inc('stats/devices/' + detectDevice());
+  inc('stats/days/'  + new Date().getDay());
+  inc('stats/hours/' + new Date().getHours());
+  inc('daily/'       + new Date().toISOString().slice(0,10));
+  try {
+    const geo = await fetch('https://ipapi.co/json/').then(r => r.json());
+    if (geo && /^[A-Z]{2}$/.test(geo.country_code)) inc('stats/countries/' + geo.country_code);
+  } catch(_) {}
+}
+
+function trackTab(name) {
+  if (db) db.ref('stats/tabs/' + name).transaction(v => (v||0) + 1);
+}
 
 function togglePanel() {
   const p = document.getElementById('analyticsPanel');
@@ -704,8 +820,9 @@ function togglePanel() {
   btn.title = collapsed ? 'Show analytics' : 'Hide analytics';
 }
 
-// Init panel
-buildTrafficPanel();
+// Init
+renderTrafficPanel();
+initAnalytics();
 renderSession();
 
 // ════════════════════════════════════════════════════
@@ -720,6 +837,7 @@ function switchTab(btn, name) {
   SESSION.currentTab = name;
   SESSION.tabVisits[name] = (SESSION.tabVisits[name] || 0) + 1;
   renderSession();
+  trackTab(name);
 }
 
 // ════════════════════════════════════════════════════
@@ -758,7 +876,7 @@ function mem(op) {
 function toR(x) { return angleDeg ? x*Math.PI/180 : x; }
 function fromR(x) { return angleDeg ? x*180/Math.PI : x; }
 
-function evaluate() {
+function doCalc() {
   try {
     let e = expr;
     const stripped = e.replace(/sin|cos|tan|asin|acos|atan|sinh|cosh|tanh|sqrt|cbrt|abs|log|ln/g,'');
@@ -801,7 +919,7 @@ document.addEventListener('keydown', e => {
   else if (e.key==='('||e.key===')') ins(e.key);
   else if (e.key==='^') ins('^');
   else if (e.key==='%') ins('%');
-  else if (e.key==='Enter'||e.key==='=') evaluate();
+  else if (e.key==='Enter'||e.key==='=') doCalc();
   else if (e.key==='Backspace') bksp();
   else if (e.key==='Escape') clearCalc();
 });
