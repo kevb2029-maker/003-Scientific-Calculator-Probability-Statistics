@@ -97,10 +97,8 @@ label:first-child{margin-top:0}
   header p{font-size:.78rem}
 
   .container{padding:14px 10px}
-  .contact-wrap{padding:0 10px 28px}
 
   .card{padding:13px 12px}
-  .contact-card{padding:16px}
 
   .tab-btn{padding:9px 13px;font-size:.85rem}
 
@@ -153,20 +151,6 @@ label:first-child{margin-top:0}
   .container{padding:12px 8px}
 }
 
-/* ── Contact section ── */
-.contact-wrap{max-width:900px;margin:0 auto;padding:0 16px 36px}
-.contact-card{
-  background:#EDE8DC;
-  border:1px solid #A09070;
-  border-top:3px solid #8B4513;
-  border-radius:10px;
-  padding:24px 26px;
-}
-.contact-card h2{font-size:1rem;font-weight:600;color:#8B4513;margin-bottom:10px}
-.contact-card p{font-size:.9rem;color:#333;line-height:1.55}
-.contact-row{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-top:14px}
-.contact-row .btn{margin-top:0}
-#cStatus{font-size:.83rem}
 </style>
 </head>
 <body>
@@ -377,24 +361,6 @@ label:first-child{margin-top:0}
         </div>
       </div>
     </div><!-- /container -->
-
-    <!-- ───────── Contact form ───────── -->
-    <div class="contact-wrap">
-      <div class="contact-card">
-        <h2>Contact</h2>
-        <p>If you notice any errors or want to request new features, please fill out this form:</p>
-        <div style="margin-top:14px">
-          <label>Your name <span style="color:#A09070;font-size:.75rem">(optional)</span></label>
-          <input type="text" id="cName" placeholder="Name" style="margin-bottom:10px">
-          <label>Message</label>
-          <textarea id="cMsg" rows="3" placeholder="Describe the error or feature request…"></textarea>
-        </div>
-        <div class="contact-row">
-          <button class="btn" onclick="sendMsg()">Send Message</button>
-          <span id="cStatus"></span>
-        </div>
-      </div>
-    </div>
 
 <script>
 // ════════════════════════════════════════════════════
@@ -624,24 +590,6 @@ function calcBeta(){
     ${rb(`Beta(${a0}, ${b0})`,'Prior')+rb(`Beta(${aN}, ${bN})`,'Posterior')+rb(priorMean.toFixed(4),'Prior Mean')+rb(postMean.toFixed(4),'Posterior Mean')+rb(isNaN(mode)?'N/A':mode.toFixed(4),'Posterior Mode')+rb(postVar.toFixed(6),'Posterior Variance')+rb(postStd.toFixed(4),'Posterior Std Dev')+rb(`[${lo.toFixed(3)}, ${hi.toFixed(3)}]`,'≈95% Credible Interval')}
   </div>
   <div class="note" style="margin-top:10px">Observed ${s} successes and ${ff} failures (${s+ff} trials). Prior equivalent to ${a0+b0-2} prior observations.</div>`;
-}
-
-function sendMsg() {
-  const name = document.getElementById('cName').value.trim();
-  const msg  = document.getElementById('cMsg').value.trim();
-  const status = document.getElementById('cStatus');
-  if (!msg) {
-    status.textContent = 'Please enter a message.';
-    status.style.color = '#c0392b';
-    return;
-  }
-  const subject = encodeURIComponent('Statistics Calculator — Feedback' + (name ? ' from ' + name : ''));
-  const body    = encodeURIComponent((name ? 'From: ' + name + '\n\n' : '') + msg);
-  window.open('mailto:REDACTED?subject=' + subject + '&body=' + body);
-  document.getElementById('cMsg').value = '';
-  document.getElementById('cName').value = '';
-  status.textContent = 'Email client opened — press Send there to deliver your message.';
-  status.style.color = '#5A7A3A';
 }
 
 function calcBF(){
